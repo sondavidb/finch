@@ -4,7 +4,7 @@ on:
   push:
     branches: ['main', 'release/**']
     paths:
-      - 'deps/finch-core/new.txt'
+      - 'deps/finch-core'
 
 jobs:
   test:
