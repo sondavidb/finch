@@ -1,0 +1,14 @@
+name: Temp
+
+on:
+  push:
+    branches: ['main', 'release/**']
+    paths:
+      - 'deps/finch-core/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      name: something
+      run: "echo hello"
