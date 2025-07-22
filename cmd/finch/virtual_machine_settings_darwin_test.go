@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -142,19 +141,20 @@ func TestSettingsVMAction_run(t *testing.T) {
 
 	testCases := []struct {
 		name             string
-		wantErr          error
+		wantErr          string
 		wantStatusOutput string
+		wantWarnOutput   string
 		mockSvc          func(
 			*mocks.LimaConfigApplier,
 			afero.Fs,
 		)
-		cpus   int
-		memory string
+		opts config.VMConfigOpts
 	}{
 		{
 			name:             "should update vm settings",
-			wantErr:          nil,
+			wantErr:          "",
 			wantStatusOutput: "Configurations have been successfully updated.\n",
+			wantWarnOutput:   "",
 			mockSvc: func(
 				lca *mocks.LimaConfigApplier,
 				fs afero.Fs,
@@ -165,13 +165,18 @@ func TestSettingsVMAction_run(t *testing.T) {
 
 				lca.EXPECT().GetFinchConfigPath().Return(finchConfigPath)
 			},
-			cpus:   1,
-			memory: "2GiB",
+			opts: config.VMConfigOpts{
+				CPUs:          1,
+				CPUsChanged:   true,
+				Memory:        "2GiB",
+				MemoryChanged: true,
+			},
 		},
 		{
-			name:             "should return an error if the configuration of CPU or memory is invalid",
-			wantErr:          errors.New("the number of CPUs or the amount of memory should be at least one valid value"),
+			name:             "should return an error if the configuration of CPU is invalid",
+			wantErr:          "failed to validate config file: specified number of CPUs (0) must be greater than 0",
 			wantStatusOutput: "",
+			wantWarnOutput:   "",
 			mockSvc: func(
 				lca *mocks.LimaConfigApplier,
 				fs afero.Fs,
@@ -182,13 +187,18 @@ func TestSettingsVMAction_run(t *testing.T) {
 
 				lca.EXPECT().GetFinchConfigPath().Return(finchConfigPath)
 			},
-			cpus:   0,
-			memory: "",
+			opts: config.VMConfigOpts{
+				CPUs:          0,
+				CPUsChanged:   true,
+				Memory:        "2GiB",
+				MemoryChanged: true,
+			},
 		},
 		{
-			name:             "should return an error if the configuration of CPU or memory is invalid",
-			wantErr:          errors.New("the number of CPUs or the amount of memory should be at least one valid value"),
+			name:             "should return an error if the configuration of memory is invalid",
+			wantErr:          "failed to validate config file: failed to parse memory to uint: invalid suffix: 'gi'",
 			wantStatusOutput: "",
+			wantWarnOutput:   "",
 			mockSvc: func(
 				lca *mocks.LimaConfigApplier,
 				fs afero.Fs,
@@ -199,8 +209,34 @@ func TestSettingsVMAction_run(t *testing.T) {
 
 				lca.EXPECT().GetFinchConfigPath().Return(finchConfigPath)
 			},
-			cpus:   2,
-			memory: "6GiB",
+			opts: config.VMConfigOpts{
+				CPUs:          2,
+				CPUsChanged:   true,
+				Memory:        "2gi",
+				MemoryChanged: true,
+			},
+		},
+		{
+			name:             "should not return an error if the configuration of CPU and memory matches existing config",
+			wantErr:          "",
+			wantStatusOutput: "",
+			wantWarnOutput:   "Provided flags match existing settings, no changes made.",
+			mockSvc: func(
+				lca *mocks.LimaConfigApplier,
+				fs afero.Fs,
+			) {
+				finchConfigPath := "/config.yaml"
+				data := "cpus: 2\nmemory: 6GiB"
+				require.NoError(t, afero.WriteFile(fs, finchConfigPath, []byte(data), 0o600))
+
+				lca.EXPECT().GetFinchConfigPath().Return(finchConfigPath)
+			},
+			opts: config.VMConfigOpts{
+				CPUs:          2,
+				CPUsChanged:   true,
+				Memory:        "6GiB",
+				MemoryChanged: true,
+			},
 		},
 	}
 
@@ -213,15 +249,19 @@ func TestSettingsVMAction_run(t *testing.T) {
 			lca := mocks.NewLimaConfigApplier(ctrl)
 			fs := afero.NewMemMapFs()
 			stdout := bytes.Buffer{}
-			opts := config.VMConfigOpts{
-				CPUs:   tc.cpus,
-				Memory: tc.memory,
-			}
 
 			tc.mockSvc(lca, fs)
+			if tc.wantWarnOutput != "" {
+				logger.EXPECT().Warnln(tc.wantWarnOutput)
+			}
 
-			err := newSettingsVMAction(logger, lca, fs, &stdout).run(opts)
-			assert.Equal(t, err, tc.wantErr)
+			err := newSettingsVMAction(logger, lca, fs, &stdout).run(tc.opts)
+			// Use string comparison since we don't save the error types
+			if err == nil {
+				assert.Equal(t, tc.wantErr, "")
+			} else {
+				assert.Equal(t, tc.wantErr, err.Error())
+			}
 			assert.Equal(t, tc.wantStatusOutput, stdout.String())
 		})
 	}
