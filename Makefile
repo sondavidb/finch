@@ -9,6 +9,7 @@ BINDIR ?= /usr/local/bin
 OUTDIR ?= $(CURDIR)/_output
 OS_OUTDIR ?= $(OUTDIR)/os
 REPORT_DIR ?= $(CURDIR)/reports
+COV_DIR ?= $(CURDIR)/cov
 RUN_ID ?= $(GITHUB_RUN_ID)
 RUN_ATTEMPT ?= $(GITHUB_RUN_ATTEMPT)
 
@@ -291,20 +292,28 @@ test-unit:
 # Container tests and VM tests can be run in any order, but they must be run sequentially.
 # For more details, see the package-level comment of the e2e package.
 
+E2E_VM_SERIAL_COV=$(COV_DIR)/test-e2e-vm-serial
+E2E_CONTAINER_COV=$(COV_DIR)/test-e2e-vm-serial
+
 .PHONY: create-report-dir
 create-report-dir:
 	mkdir -p $(REPORT_DIR)
 
+.PHONY: create-cov-dir
+create-cov-dir:
+	mkdir -p $(COV_DIR)
+
 .PHONY: test-e2e
 test-e2e: test-e2e-vm-serial test-e2e-container
+	go tool covdata percent -i=$(E2E_VM_SERIAL_COV),$(E2E_CONTAINER_COV)
 
 .PHONY: test-e2e-vm-serial
-test-e2e-vm-serial: create-report-dir
-	go test -ldflags $(LDFLAGS) -timeout 2h ./e2e/vm -test.v -ginkgo.v -ginkgo.timeout=2h -ginkgo.flake-attempts=3 -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-vm-serial-report.json --installed="$(INSTALLED)"
+test-e2e-vm-serial: create-report-dir create-cov-dir
+	go test -coverprofile=$(E2E_VM_SERIAL_COV) -ldflags $(LDFLAGS) -timeout 2h ./e2e/vm -test.v -ginkgo.v -ginkgo.timeout=2h -ginkgo.flake-attempts=3 -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-vm-serial-report.json --installed="$(INSTALLED)"
 
 .PHONY: test-e2e-container
-test-e2e-container: create-report-dir
-	go test -ldflags $(LDFLAGS) -timeout 2h ./e2e/container -test.v -ginkgo.v -ginkgo.timeout=2h -ginkgo.flake-attempts=3 -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-container-report.json --installed="$(INSTALLED)"
+test-e2e-container: create-report-dir create-cov-dir
+	go test -coverprofile=$(E2E_CONTAINER_COV) -ldflags $(LDFLAGS) -timeout 2h ./e2e/container -test.v -ginkgo.v -ginkgo.timeout=2h -ginkgo.flake-attempts=3 -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-container-report.json --installed="$(INSTALLED)"
 
 .PHONY: test-e2e-vm
 test-e2e-vm: create-report-dir
